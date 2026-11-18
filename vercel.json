@@ -1,5 +1,6 @@
 {
-  "buildCommand": "cd siga_frontend && npm install && npm run build",
+  "installCommand": "cd siga_frontend && npm install",
+  "buildCommand": "cd siga_frontend && npm run build",
   "outputDirectory": "siga_frontend/dist",
   "framework": "vite",
   "rewrites": [

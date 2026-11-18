@@ -2,14 +2,22 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base  # 👈 AGREGAR declarative_base aquí
 from sqlalchemy import MetaData
 from ..config import settings
+import ssl
 
-# Metadata específica para Identity (separada del Core)
+# Metadata específica de Identity (separada del Core)
 metadata = MetaData()
 Base = declarative_base(metadata=metadata)
 
+# SSL para BDs remotas (Railway, etc.); sin SSL en hosts locales
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+connect_args = {"ssl": _ssl_ctx} if not settings.db_host_is_local else {}
+
 engine = create_async_engine(
-    settings.database_url, 
+    settings.database_url,
     echo=settings.debug,
+    connect_args=connect_args,
     pool_pre_ping=True,
     pool_recycle=300
 )

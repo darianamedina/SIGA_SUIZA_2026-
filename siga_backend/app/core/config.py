@@ -60,10 +60,29 @@ class CoreSettings(BaseSettings):
     def database_url(self) -> str:
         if self.DATABASE_URL:
             url = self.DATABASE_URL
-            if url.startswith("postgresql://"):
+            # Railway puede entregar postgres:// (esquema antiguo) o postgresql://
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql+psycopg://"):
+                url = url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
             return url
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    @property
+    def db_host_is_local(self) -> bool:
+        """True si la DB apunta a un host local (no requiere SSL)."""
+        _local = ("localhost", "127.0.0.1", "::1", "host.docker.internal", "postgres")
+        if self.DATABASE_URL:
+            try:
+                after = self.DATABASE_URL.split("://", 1)[-1]
+                host_part = after.split("@", 1)[-1]
+                host = host_part.split(":", 1)[0].split("/", 1)[0].split("?", 1)[0]
+                return host in _local
+            except Exception:
+                return False
+        return self.DB_HOST in _local
     
     @property
     def database_sync_url(self) -> str:

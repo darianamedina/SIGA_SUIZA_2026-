@@ -18,7 +18,28 @@ trap cleanup EXIT INT TERM
 
 if [ -n "$DATABASE_URL" ]; then
     echo "📦 DATABASE_URL detectada de Railway."
-    export DB_URL="$DATABASE_URL"
+    # Normalizar scheme para Alembic (psycopg3) + SSL para hosts remotos
+    _db_url="$DATABASE_URL"
+    case "$_db_url" in
+        postgres://*)    _db_url="postgresql+psycopg://${_db_url#postgres://}" ;;
+        postgresql://*)  _db_url="postgresql+psycopg://${_db_url#postgresql://}" ;;
+        postgresql+asyncpg://*) _db_url="postgresql+psycopg://${_db_url#postgresql+asyncpg://}" ;;
+    esac
+    # Añadir sslmode=require si es host remoto y no trae sslmode
+    _host=$(printf '%s' "$_db_url" | sed -E 's#^[^:]+://[^@]*@##; s#[:/].*##')
+    case "$_host" in
+        localhost|127.0.0.1|::1|host.docker.internal|postgres) ;;
+        *)
+            if ! printf '%s' "$_db_url" | grep -q 'sslmode='; then
+                case "$_db_url" in
+                    *\?*) _db_url="${_db_url}&sslmode=require" ;;
+                    *)    _db_url="${_db_url}?sslmode=require" ;;
+                esac
+            fi
+            ;;
+    esac
+    export DB_URL="$_db_url"
+    echo "🔗 DB_URL normalizada para migraciones."
 fi
 
 if [ "$SKIP_MIGRATIONS" != "true" ]; then

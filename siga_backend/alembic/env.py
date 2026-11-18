@@ -14,23 +14,44 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 config = context.config
 
 # Override DB URL desde variable de entorno
-db_url = os.getenv("DB_URL")
+# Soporta: DB_URL directa, o DATABASE_URL (Railway), o componentes DB_*
+db_url = os.getenv("DB_URL") or os.getenv("DATABASE_URL")
+
+_SSL_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "host.docker.internal", "postgres")
+
+def _is_local_url(url: str) -> bool:
+    """Detecta si la URL apunta a un host local (no requiere SSL)."""
+    try:
+        # Extraer host sin dependencias externas
+        after_scheme = url.split("://", 1)[-1]
+        host_part = after_scheme.split("@", 1)[-1]
+        host = host_part.split(":", 1)[0].split("/", 1)[0].split("?", 1)[0]
+        return host in _SSL_LOCAL_HOSTS
+    except Exception:
+        return False
+
+def _normalize_sync_url(url: str) -> str:
+    """Convierte cualquier scheme a postgresql+psycopg:// (psycopg3) y añade SSL si es remoto."""
+    # Unificar scheme al dialecto sync instalado (psycopg3)
+    for prefix in ("postgresql+asyncpg://", "postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = url.replace(prefix, "postgresql+psycopg://", 1)
+            break
+    # Añadir sslmode=require para hosts remotos si no viene explícito
+    if "sslmode=" not in url and not _is_local_url(url):
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
+    return url
+
 if not db_url:
     user = os.getenv("DB_USER", "postgres")
     password = os.getenv("DB_PASSWORD", "john.007")
     host = os.getenv("DB_HOST", "host.docker.internal")
     port = os.getenv("DB_PORT", "5432")
     dbname = os.getenv("DB_NAME", "siga_core")
-    db_url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
-    config.set_main_option("sqlalchemy.url", db_url)
-else:
-    config.set_main_option("sqlalchemy.url", db_url)
+    db_url = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{dbname}"
 
-# Convertir asyncpg a psycopg (sync) para migraciones síncronas
-url = config.get_main_option("sqlalchemy.url")
-if url and "asyncpg" in url:
-    url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    config.set_main_option("sqlalchemy.url", url)
+config.set_main_option("sqlalchemy.url", _normalize_sync_url(db_url))
 
 # Interpretar el archivo de config para logging
 if config.config_file_name is not None:
